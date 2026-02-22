@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import { Package, Home, ChefHat, BarChart3, LogIn, LogOut } from 'lucide-react';
+import { Package, Home, ChefHat, BookOpen, BarChart3, LogIn, LogOut } from 'lucide-react';
 import { signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../firebase/config';
 import { toast } from 'react-toastify';
@@ -12,17 +12,20 @@ export default function Navbar() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    // Listen for auth state changes
+    if (!auth) return;
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
     });
-
     return () => unsubscribe();
   }, []);
 
   const isActive = (path) => router.pathname === path;
 
   const handleGoogleLogin = async () => {
+    if (!auth) {
+      toast.error('Firebase is not configured. Copy .env.example to .env.local and add your Firebase project credentials.');
+      return;
+    }
     setLoading(true);
     try {
       const provider = new GoogleAuthProvider();
@@ -43,6 +46,10 @@ export default function Navbar() {
         toast.error('Please allow popups for this site');
       } else if (error.code === 'auth/unauthorized-domain') {
         toast.error('Domain not authorized. Add localhost to Firebase authorized domains.');
+      } else if (error.code === 'auth/invalid-api-key' || error.message?.includes('api-key-not-valid')) {
+        toast.error('Invalid Firebase API key. Check .env.local — use values from Firebase Console → Project settings.');
+      } else if (error.code === 'auth/configuration-not-found' || error.message?.includes('CONFIGURATION_NOT_FOUND')) {
+        toast.error('Enable Authentication in Firebase Console: Authentication → Sign-in method → enable Google.');
       } else {
         toast.error(`Login failed: ${error.message}`);
       }
@@ -52,6 +59,7 @@ export default function Navbar() {
   };
 
   const handleLogout = async () => {
+    if (!auth) return;
     try {
       await signOut(auth);
       setUser(null);
@@ -104,6 +112,17 @@ export default function Navbar() {
             >
               <ChefHat size={20} />
               <span className="hidden sm:inline">Recipes</span>
+            </Link>
+            <Link
+              href="/saved-recipes"
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
+                isActive('/saved-recipes') 
+                  ? 'bg-blue-100 text-blue-700' 
+                  : 'text-gray-600 hover:bg-gray-100'
+              }`}
+            >
+              <BookOpen size={20} />
+              <span className="hidden sm:inline">Saved</span>
             </Link>
             <Link
               href="/analysis"

@@ -4,7 +4,7 @@ import { collection, addDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { toast } from 'react-toastify';
 
-export default function AddItemModal({ isOpen, onClose, onAdd }) {
+export default function AddItemModal({ isOpen, onClose, onAdd, onSaved }) {
   const [formData, setFormData] = useState({
     name: '',
     quantity: 1,
@@ -42,34 +42,21 @@ export default function AddItemModal({ isOpen, onClose, onAdd }) {
       imageUrl: imagePreview || null
     };
 
-    // Add locally first for instant feedback
-    const localItem = { ...itemData, id: 'temp-' + Date.now() };
+    const tempId = 'temp-' + Date.now();
+    const localItem = { ...itemData, id: tempId };
     onAdd(localItem);
-    
-    // Show success immediately
     toast.success('Item added!');
-    
-    // Reset form
-    setFormData({ 
-      name: '', 
-      quantity: 1, 
-      unit: 'pieces', 
-      category: 'Other', 
-      expirationDate: '', 
-      notes: '' 
-    });
+    setFormData({ name: '', quantity: 1, unit: 'pieces', category: 'Other', expirationDate: '', notes: '' });
     setImagePreview(null);
     onClose();
     setLoading(false);
 
-    // Sync to Firebase in background (don't wait)
     try {
       const docRef = await addDoc(collection(db, 'pantryItems'), itemData);
-      // Update the temp item with real ID
-      console.log('Synced to Firebase:', docRef.id);
+      if (onSaved) onSaved(tempId, docRef.id);
     } catch (error) {
-      console.error('Background sync failed:', error);
-      // Item is already added locally, so no error shown to user
+      console.error('Sync to Firebase failed:', error);
+      toast.error('Item saved locally but sync failed. Refresh to retry.');
     }
   };
 

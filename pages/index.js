@@ -1,78 +1,34 @@
-import React, { useState, useEffect } from 'react';
-import { collection, getDocs, query, orderBy } from 'firebase/firestore';
-import { db } from '../firebase/config';
+import React, { useState, useMemo } from 'react';
+import Link from 'next/link';
 import Navbar from '../components/Navbar';
 import AddItemModal from '../components/AddItemModal';
 import InventoryList from '../components/InventoryList';
 import Pantry from '../components/Pantry';
-import { Plus, AlertCircle, Package, TrendingUp, ChefHat } from 'lucide-react';
-import { toast } from 'react-toastify';
+import { useInventory, useInventoryStats } from '../context/InventoryContext';
+import { Plus, AlertCircle, Package, TrendingUp, ChefHat, AlertTriangle, ArrowRight } from 'lucide-react';
 
 export default function Dashboard() {
-  const [items, setItems] = useState([]);
+  const { items, loading, addItem, replaceTempId, deleteItem, refresh } = useInventory();
+  const { expiringSoon, needsAttention, categoryCount } = useInventoryStats(items);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [notifications, setNotifications] = useState([]);
 
-  useEffect(() => {
-    fetchItems();
-  }, []);
+  const handleAddItem = (newItem) => addItem(newItem);
+  const handleSaved = (tempId, realId) => replaceTempId(tempId, realId);
+  const handleDeleteItem = (id) => deleteItem(id);
+  const handleEditItem = () => {}; // TODO: edit modal
 
-  useEffect(() => {
-    checkExpiringItems();
-  }, [items]);
-
-  const fetchItems = async () => {
-    try {
-      const q = query(collection(db, 'pantryItems'), orderBy('addedDate', 'desc'));
-      const querySnapshot = await getDocs(q);
-      const itemsList = querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      setItems(itemsList);
-    } catch (error) {
-      console.error('Error fetching items:', error);
-      toast.error('Failed to load items');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const checkExpiringItems = () => {
-    const expiring = items.filter(item => {
-      if (!item.expirationDate) return false;
-      const days = Math.ceil((new Date(item.expirationDate) - new Date()) / (1000 * 60 * 60 * 24));
-      return days >= 0 && days <= 3;
-    });
-    
-    if (expiring.length > 0) {
-      setNotifications(expiring.map(item => 
-        `${item.name} expires in ${Math.ceil((new Date(item.expirationDate) - new Date()) / (1000 * 60 * 60 * 24))} days!`
-      ));
-    }
-  };
-
-  const handleAddItem = (newItem) => {
-    setItems([newItem, ...items]);
-  };
-
-  const handleDeleteItem = (id) => {
-    setItems(items.filter(item => item.id !== id));
-  };
-
-  const handleEditItem = (item) => {
-    console.log('Edit item:', item);
-  };
+  const recipeReadyCount = useMemo(() => {
+    return items.length >= 2 ? Math.min(12, Math.floor(items.length / 2) + 3) : 0;
+  }, [items.length]);
 
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50">
         <Navbar />
-        <div className="flex items-center justify-center h-96">
+        <div className="flex items-center justify-center min-h-[60vh]">
           <div className="text-center">
-            <Package className="mx-auto mb-4 animate-pulse" size={48} />
-            <p className="text-gray-600">Loading...</p>
+            <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+            <p className="text-gray-600">Loading your pantry...</p>
           </div>
         </div>
       </div>
@@ -83,72 +39,107 @@ export default function Dashboard() {
     <div className="min-h-screen bg-gray-50">
       <Navbar />
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="space-y-6">
-          <div className="flex items-center justify-between">
-            <h1 className="text-3xl font-bold text-gray-800">Dashboard</h1>
+        <div className="space-y-8">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
             <button
               onClick={() => setIsModalOpen(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              className="flex items-center justify-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors shadow-sm"
             >
               <Plus size={20} />
               Add Item
             </button>
           </div>
-          
-          {notifications.length > 0 && (
-            <div className="bg-orange-50 border-l-4 border-orange-500 p-4 rounded">
-              <div className="flex items-start">
-                <AlertCircle className="text-orange-500 mt-0.5" size={20} />
-                <div className="ml-3">
-                  <h3 className="text-sm font-medium text-orange-800">Items Expiring Soon</h3>
-                  <div className="mt-2 text-sm text-orange-700">
-                    {notifications.map((notif, idx) => (
-                      <p key={idx}>{notif}</p>
-                    ))}
-                  </div>
+
+          {/* Alerts: Needs attention first, then expiring soon */}
+          {needsAttention.length > 0 && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-4 sm:p-5">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="text-red-500 shrink-0 mt-0.5" size={22} />
+                <div className="min-w-0">
+                  <h3 className="font-semibold text-red-800">Needs attention</h3>
+                  <p className="text-sm text-red-700 mt-1">
+                    {needsAttention.length} item{needsAttention.length !== 1 ? 's' : ''} expired or expiring in 3 days — use or replace soon.
+                  </p>
+                  <Link
+                    href="/inventory?filter=attention"
+                    className="inline-flex items-center gap-1 mt-2 text-sm font-medium text-red-700 hover:text-red-800"
+                  >
+                    View in Inventory <ArrowRight size={14} />
+                  </Link>
                 </div>
               </div>
             </div>
           )}
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
-              <Package className="text-blue-600 mb-3" size={32} />
-              <h3 className="text-lg font-semibold text-gray-800 mb-1">Total Items</h3>
-              <p className="text-3xl font-bold text-gray-900">{items.length}</p>
+          {expiringSoon.length > 0 && needsAttention.length === 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 sm:p-5">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="text-amber-600 shrink-0 mt-0.5" size={22} />
+                <div>
+                  <h3 className="font-semibold text-amber-800">Expiring soon</h3>
+                  <p className="text-sm text-amber-700 mt-1">
+                    {expiringSoon.length} item{expiringSoon.length !== 1 ? 's' : ''} in the next 3 days.
+                  </p>
+                  <Link
+                    href="/inventory?filter=expiring"
+                    className="inline-flex items-center gap-1 mt-2 text-sm font-medium text-amber-700 hover:text-amber-800"
+                  >
+                    View in Inventory <ArrowRight size={14} />
+                  </Link>
+                </div>
+              </div>
             </div>
-            <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
-              <TrendingUp className="text-green-600 mb-3" size={32} />
-              <h3 className="text-lg font-semibold text-gray-800 mb-1">Categories</h3>
-              <p className="text-3xl font-bold text-gray-900">
-                {new Set(items.map(i => i.category)).size}
+          )}
+
+          {/* Stats */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6">
+            <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
+              <Package className="text-blue-600 mb-3" size={28} />
+              <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide">Total items</h3>
+              <p className="text-3xl font-bold text-gray-900 mt-1">{items.length}</p>
+            </div>
+            <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
+              <TrendingUp className="text-emerald-600 mb-3" size={28} />
+              <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide">Categories</h3>
+              <p className="text-3xl font-bold text-gray-900 mt-1">{categoryCount}</p>
+            </div>
+            <Link href="/generate-recipes" className="bg-white rounded-xl p-6 shadow-sm border border-gray-200 hover:border-blue-200 hover:shadow-md transition-all block">
+              <ChefHat className="text-violet-600 mb-3" size={28} />
+              <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide">Recipes</h3>
+              <p className="text-3xl font-bold text-gray-900 mt-1">
+                {recipeReadyCount > 0 ? `${recipeReadyCount}+` : '—'}
               </p>
-            </div>
-            <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
-              <ChefHat className="text-purple-600 mb-3" size={32} />
-              <h3 className="text-lg font-semibold text-gray-800 mb-1">Recipes Available</h3>
-              <p className="text-3xl font-bold text-gray-900">12</p>
-            </div>
+              <span className="text-sm text-blue-600 mt-2 inline-block">Find recipes →</span>
+            </Link>
           </div>
 
           <Pantry items={items} />
 
-          <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
-            <h2 className="text-xl font-semibold text-gray-800 mb-4">Recent Items</h2>
-            <InventoryList 
-              items={items.slice(0, 5)} 
-              onEdit={handleEditItem}
-              onDelete={handleDeleteItem}
-              searchTerm=""
-            />
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-gray-800">Recent items</h2>
+              <Link href="/inventory" className="text-sm text-blue-600 hover:text-blue-700 font-medium">
+                View all
+              </Link>
+            </div>
+            <div className="p-6">
+              <InventoryList
+                items={items.slice(0, 5)}
+                onEdit={handleEditItem}
+                onDelete={handleDeleteItem}
+                searchTerm=""
+              />
+            </div>
           </div>
         </div>
       </main>
 
-      <AddItemModal 
+      <AddItemModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         onAdd={handleAddItem}
+        onSaved={handleSaved}
       />
     </div>
   );

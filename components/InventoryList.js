@@ -27,16 +27,30 @@ export default function InventoryList({ items, onEdit, onDelete, searchTerm }) {
   };
 
   const handleDelete = async (id) => {
-    if (window.confirm('Are you sure you want to delete this item?')) {
-      try {
-        await deleteDoc(doc(db, 'pantryItems', id));
-        toast.success('Item deleted successfully!');
-        onDelete(id);
-      } catch (error) {
-        console.error('Error deleting item:', error);
-        toast.error('Failed to delete item');
-      }
+    if (!window.confirm('Are you sure you want to delete this item?')) return;
+
+    const isTempId = typeof id === 'string' && id.startsWith('temp-');
+
+    if (isTempId) {
+      onDelete(id);
+      toast.success('Item removed');
+      return;
     }
+
+    if (!db) {
+      toast.error('Cannot delete: database not connected');
+      onDelete(id);
+      return;
+    }
+
+    try {
+      await deleteDoc(doc(db, 'pantryItems', id));
+      toast.success('Item deleted successfully!');
+    } catch (error) {
+      console.error('Error deleting item:', error);
+      toast.error('Failed to delete item');
+    }
+    onDelete(id);
   };
 
   return (
